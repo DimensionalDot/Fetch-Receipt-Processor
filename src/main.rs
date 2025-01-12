@@ -7,7 +7,11 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex},
 };
-use warp::{http::StatusCode, reply::Reply, Filter};
+use warp::{
+    http::StatusCode,
+    reply::{self, Reply},
+    Filter,
+};
 
 type Reciepts = HashMap<usize, Reciept>;
 
@@ -95,29 +99,12 @@ async fn main() {
         .and(warp::path::end())
         .and(warp::body::json())
         .and(with_reciepts(reciepts.clone()))
-        .map(move |reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>| {
-            if let Ok(mut reciepts) = reciepts.lock() {
-                let id = reciepts.len();
-                reciepts.insert(id, reciept); // currently overwriting on collision
-
-                warp::reply::json(&json![{ "id": id }]).into_response()
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR.into_response()
-            }
-        });
+        .map(add_reciept);
 
     let points = warp::get()
         .and(warp::path!(usize / "points"))
         .and(with_reciepts(reciepts.clone()))
-        .map(move |id: usize, reciepts: Arc<Mutex<Reciepts>>| {
-            let reciepts = reciepts.lock().unwrap(); // TODO unwrap
-            if let Some(reciept) = reciepts.get(&id) {
-                let points = reciept.points();
-                warp::reply::json(&json![{ "points": points}]).into_response()
-            } else {
-                StatusCode::NOT_FOUND.into_response()
-            }
-        });
+        .map(get_points);
 
     let routes = warp::path("reciepts").and(process.or(points));
 
@@ -128,4 +115,25 @@ fn with_reciepts(
     reciepts: Arc<Mutex<Reciepts>>,
 ) -> impl Filter<Extract = (Arc<Mutex<Reciepts>>,), Error = Infallible> + Clone {
     warp::any().map(move || reciepts.clone())
+}
+
+fn add_reciept(reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
+    if let Ok(mut reciepts) = reciepts.lock() {
+        let id = reciepts.len();
+        reciepts.insert(id, reciept); // currently overwriting on collision
+
+        warp::reply::json(&json![{ "id": id }]).into_response()
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+}
+
+fn get_points(id: usize, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
+    let reciepts = reciepts.lock().unwrap(); // TODO unwrap
+    if let Some(reciept) = reciepts.get(&id) {
+        let points = reciept.points();
+        warp::reply::json(&json![{ "points": points}]).into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
 }
