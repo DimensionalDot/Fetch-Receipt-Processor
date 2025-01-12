@@ -94,15 +94,14 @@ impl Item {
 async fn main() {
     let reciepts: Reciepts = HashMap::new();
     let reciepts = Arc::new(Mutex::new(reciepts));
-    let process = warp::post()
-        .and(warp::path("process"))
-        .and(warp::path::end())
+    let process = warp::path!("process")
+        .and(warp::post())
         .and(warp::body::json())
         .and(with_reciepts(reciepts.clone()))
         .map(add_reciept);
 
-    let points = warp::get()
-        .and(warp::path!(usize / "points"))
+    let points = warp::path!(usize / "points")
+        .and(warp::get())
         .and(with_reciepts(reciepts.clone()))
         .map(get_points);
 
