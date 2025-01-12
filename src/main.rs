@@ -128,11 +128,14 @@ fn add_reciept(reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>) -> reply::Respo
 }
 
 fn get_points(id: usize, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
-    let reciepts = reciepts.lock().unwrap(); // TODO unwrap
-    if let Some(reciept) = reciepts.get(&id) {
-        let points = reciept.points();
-        warp::reply::json(&json![{ "points": points}]).into_response()
+    if let Ok(reciepts) = reciepts.lock() {
+        if let Some(reciept) = reciepts.get(&id) {
+            let points = reciept.points();
+            warp::reply::json(&json![{ "points": points}]).into_response()
+        } else {
+            StatusCode::NOT_FOUND.into_response()
+        }
     } else {
-        StatusCode::NOT_FOUND.into_response()
+        StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
 }
