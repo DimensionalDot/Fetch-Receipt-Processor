@@ -7,13 +7,14 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex},
 };
+use uuid::Uuid;
 use warp::{
     http::StatusCode,
     reply::{self, Reply},
     Filter,
 };
 
-type Reciepts = HashMap<usize, Reciept>;
+type Reciepts = HashMap<Uuid, Reciept>;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,7 +101,7 @@ async fn main() {
         .and(with_reciepts(reciepts.clone()))
         .map(add_reciept);
 
-    let points = warp::path!(usize / "points")
+    let points = warp::path!(Uuid / "points")
         .and(warp::get())
         .and(with_reciepts(reciepts.clone()))
         .map(get_points);
@@ -118,16 +119,16 @@ fn with_reciepts(
 
 fn add_reciept(reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
     if let Ok(mut reciepts) = reciepts.lock() {
-        let id = reciepts.len();
-        reciepts.insert(id, reciept); // currently overwriting on collision
+        let id = Uuid::new_v4();
+        reciepts.insert(id, reciept);
 
-        warp::reply::json(&json![{ "id": id }]).into_response()
+        warp::reply::json(&json![{ "id": id.to_string() }]).into_response()
     } else {
         StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
 }
 
-fn get_points(id: usize, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
+fn get_points(id: Uuid, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
     if let Ok(reciepts) = reciepts.lock() {
         if let Some(reciept) = reciepts.get(&id) {
             let points = reciept.points();
