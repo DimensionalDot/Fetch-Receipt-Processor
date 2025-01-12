@@ -3,12 +3,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::HashMap,
-    ops::DerefMut,
+    convert::Infallible,
     sync::{Arc, Mutex},
 };
-use warp::Filter;
+use warp::{http::StatusCode, reply::Reply, Filter};
 
-#[derive(Serialize, Deserialize)]
+type Reciepts = HashMap<usize, Reciept>;
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Reciept {
     retailer: String,
@@ -27,27 +29,32 @@ struct Item {
 
 #[tokio::main]
 async fn main() {
-    let reciepts: HashMap<usize, Reciept> = HashMap::new();
+    let reciepts: Reciepts = HashMap::new();
     let reciepts = Arc::new(Mutex::new(reciepts));
-
     let process = warp::post()
         .and(warp::path("process"))
         .and(warp::path::end())
         .and(warp::body::json())
-        .map(move |reciept: Reciept| {
-            let reciepts = Arc::clone(&reciepts);
-            let mut reciepts = reciepts
-                .lock()
-                .expect("reciepts shouldn't be locked on this thread");
-            let reciepts = reciepts.deref_mut();
-            let id = reciepts.len();
+        .and(with_reciepts(reciepts.clone()))
+        .map(move |reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>| {
+            if let Ok(mut reciepts) = reciepts.lock() {
+                let id = reciepts.len();
+                reciepts.insert(id, reciept); // currently overwriting on collision
 
-            reciepts.insert(id, reciept);
+                warp::reply::json(&json![{ "id": id }]).into_response()
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
 
-            warp::reply::json(&json![{ "id": id }])
         });
 
     let routes = process;
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+}
+
+fn with_reciepts(
+    reciepts: Arc<Mutex<Reciepts>>,
+) -> impl Filter<Extract = (Arc<Mutex<Reciepts>>,), Error = Infallible> + Clone {
+    warp::any().map(move || reciepts.clone())
 }
