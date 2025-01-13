@@ -100,7 +100,7 @@ async fn main() {
 
     let routes = warp::path("receipts").and(process.or(points));
 
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
 }
 
 fn with_receipts(
