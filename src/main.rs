@@ -1,5 +1,5 @@
 use chrono::{Datelike, NaiveDate, NaiveTime};
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -23,7 +23,8 @@ struct Reciept {
     purchase_date: NaiveDate,
     purchase_time: NaiveTime,
     items: Vec<Item>,
-    total: String,
+    #[serde(deserialize_with = "deserialize_cost")]
+    total: f32,
 }
 
 impl Reciept {
@@ -36,16 +37,11 @@ impl Reciept {
             .filter(|&c| c.is_alphanumeric())
             .count();
 
-        let total: f32 = self
-            .total
-            .parse()
-            .expect("total should have been checked to be a valid f32");
-
-        if total % 1.0 == 0.0 {
+        if self.total % 1.0 == 0.0 {
             points += 50;
         }
 
-        if total % 0.25 == 0.0 {
+        if self.total % 0.25 == 0.0 {
             points += 25;
         }
 
@@ -73,18 +69,14 @@ impl Reciept {
 #[serde(rename_all = "camelCase")]
 struct Item {
     short_description: String,
-    price: String,
+    #[serde(deserialize_with = "deserialize_cost")]
+    price: f32,
 }
 
 impl Item {
     pub fn points(&self) -> usize {
         if self.short_description.trim().chars().count() % 3 == 0 {
-            let price: f32 = self
-                .price
-                .parse()
-                .expect("price should have been checked to be a valid f32");
-
-            (price * 0.2).ceil() as usize
+            (self.price * 0.2).ceil() as usize
         } else {
             0
         }
@@ -139,4 +131,28 @@ fn get_points(id: Uuid, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
     } else {
         StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
+}
+
+fn deserialize_cost<'de, D>(deserializer: D) -> Result<f32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct CostVisitor;
+
+    impl<'de> Visitor<'de> for CostVisitor {
+        type Value = f32;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string containing a floating point number")
+        }
+
+        fn visit_str<E>(self, cost: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            cost.parse().map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_str(CostVisitor)
 }
