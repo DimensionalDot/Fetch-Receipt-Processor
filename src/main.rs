@@ -14,11 +14,11 @@ use warp::{
     Filter,
 };
 
-type Reciepts = HashMap<Uuid, Reciept>;
+type Receipts = HashMap<Uuid, Receipt>;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Reciept {
+struct Receipt {
     retailer: String,
     purchase_date: NaiveDate,
     purchase_time: NaiveTime,
@@ -27,7 +27,7 @@ struct Reciept {
     total: f32,
 }
 
-impl Reciept {
+impl Receipt {
     fn points(&self) -> usize {
         let mut points = 0;
 
@@ -85,34 +85,34 @@ impl Item {
 
 #[tokio::main]
 async fn main() {
-    let reciepts: Reciepts = HashMap::new();
-    let reciepts = Arc::new(Mutex::new(reciepts));
+    let receipts = Arc::new(Mutex::new(HashMap::new()));
+    
     let process = warp::path!("process")
         .and(warp::post())
         .and(warp::body::json())
-        .and(with_reciepts(reciepts.clone()))
-        .map(add_reciept);
+        .and(with_receipts(receipts.clone()))
+        .map(add_receipt);
 
     let points = warp::path!(Uuid / "points")
         .and(warp::get())
-        .and(with_reciepts(reciepts.clone()))
+        .and(with_receipts(receipts.clone()))
         .map(get_points);
 
-    let routes = warp::path("reciepts").and(process.or(points));
+    let routes = warp::path("receipts").and(process.or(points));
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
 
-fn with_reciepts(
-    reciepts: Arc<Mutex<Reciepts>>,
-) -> impl Filter<Extract = (Arc<Mutex<Reciepts>>,), Error = Infallible> + Clone {
-    warp::any().map(move || reciepts.clone())
+fn with_receipts(
+    receipts: Arc<Mutex<Receipts>>,
+) -> impl Filter<Extract = (Arc<Mutex<Receipts>>,), Error = Infallible> + Clone {
+    warp::any().map(move || receipts.clone())
 }
 
-fn add_reciept(reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
-    if let Ok(mut reciepts) = reciepts.lock() {
+fn add_receipt(receipt: Receipt, receipts: Arc<Mutex<Receipts>>) -> reply::Response {
+    if let Ok(mut receipts) = receipts.lock() {
         let id = Uuid::new_v4();
-        reciepts.insert(id, reciept);
+        receipts.insert(id, receipt);
 
         warp::reply::json(&json![{ "id": id.to_string() }]).into_response()
     } else {
@@ -120,10 +120,10 @@ fn add_reciept(reciept: Reciept, reciepts: Arc<Mutex<Reciepts>>) -> reply::Respo
     }
 }
 
-fn get_points(id: Uuid, reciepts: Arc<Mutex<Reciepts>>) -> reply::Response {
-    if let Ok(reciepts) = reciepts.lock() {
-        if let Some(reciept) = reciepts.get(&id) {
-            let points = reciept.points();
+fn get_points(id: Uuid, receipts: Arc<Mutex<Receipts>>) -> reply::Response {
+    if let Ok(receipts) = receipts.lock() {
+        if let Some(receipts) = receipts.get(&id) {
+            let points = receipts.points();
             warp::reply::json(&json![{ "points": points}]).into_response()
         } else {
             StatusCode::NOT_FOUND.into_response()
