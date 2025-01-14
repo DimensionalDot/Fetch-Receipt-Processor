@@ -31,14 +31,14 @@ struct Receipt {
 }
 
 impl Receipt {
-    fn points(&self) -> usize {
+    fn points(&self) -> u64 {
         let mut points = 0;
 
         points += self // 1 point per alphanumeric in retailer name
             .retailer
             .chars()
             .filter(|&c| c.is_alphanumeric())
-            .count();
+            .count() as u64;
 
         if self.total % 1.0 == 0.0 {
             points += 50;
@@ -48,7 +48,7 @@ impl Receipt {
             points += 25;
         }
 
-        points += self.items.len() / 2 * 5; // integer division
+        points += self.items.len() as u64 / 2 * 5; // integer division
 
         for item in self.items.iter() {
             points += item.points();
@@ -77,9 +77,9 @@ struct Item {
 }
 
 impl Item {
-    pub fn points(&self) -> usize {
+    pub fn points(&self) -> u64 {
         if self.short_description.trim().chars().count() % 3 == 0 {
-            (self.price * 0.2).ceil() as usize
+            (self.price * 0.2).ceil() as u64
         } else {
             0
         }
