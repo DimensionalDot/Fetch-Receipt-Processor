@@ -13,7 +13,7 @@ use warp::{
     filters::body::BodyDeserializeError,
     http::StatusCode,
     reject::{Reject, Rejection},
-    reply::{self, Reply, Response},
+    reply::{Reply, Response},
     Filter,
 };
 
