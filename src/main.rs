@@ -10,8 +10,10 @@ use std::{
 };
 use uuid::Uuid;
 use warp::{
+    filters::body::BodyDeserializeError,
     http::StatusCode,
-    reply::{self, Reply},
+    reject::{Reject, Rejection},
+    reply::{self, Reply, Response},
     Filter,
 };
 
@@ -97,17 +99,20 @@ async fn main() {
     let args = Args::parse();
 
     let receipts = Arc::new(Mutex::new(HashMap::new()));
-    
+
     let process = warp::path!("process")
         .and(warp::post())
         .and(warp::body::json())
         .and(with_receipts(receipts.clone()))
-        .map(add_receipt);
+        .map(add_receipt)
+        .recover(handle_bad_receipt);
 
-    let points = warp::path!(Uuid / "points")
+    let points = warp::path!(String / "points")
         .and(warp::get())
+        .and_then(try_convert_id_to_uuid)
         .and(with_receipts(receipts.clone()))
-        .map(get_points);
+        .and_then(get_points)
+        .recover(handle_bad_id);
 
     let routes = warp::path("receipts").and(process.or(points));
 
@@ -120,7 +125,7 @@ fn with_receipts(
     warp::any().map(move || receipts.clone())
 }
 
-fn add_receipt(receipt: Receipt, receipts: Arc<Mutex<Receipts>>) -> reply::Response {
+fn add_receipt(receipt: Receipt, receipts: Arc<Mutex<Receipts>>) -> Response {
     if let Ok(mut receipts) = receipts.lock() {
         let id = Uuid::new_v4();
         receipts.insert(id, receipt);
@@ -131,16 +136,50 @@ fn add_receipt(receipt: Receipt, receipts: Arc<Mutex<Receipts>>) -> reply::Respo
     }
 }
 
-fn get_points(id: Uuid, receipts: Arc<Mutex<Receipts>>) -> reply::Response {
+async fn handle_bad_receipt(err: Rejection) -> Result<impl Reply, Rejection> {
+    if let Some(_) = err.find::<BodyDeserializeError>() {
+        Ok(warp::reply::with_status(
+            "The reciept is invalid.",
+            StatusCode::BAD_REQUEST,
+        ))
+    } else {
+        Err(err)
+    }
+}
+
+async fn get_points(id: Uuid, receipts: Arc<Mutex<Receipts>>) -> Result<Response, Rejection> {
     if let Ok(receipts) = receipts.lock() {
         if let Some(receipts) = receipts.get(&id) {
             let points = receipts.points();
-            warp::reply::json(&json![{ "points": points}]).into_response()
+            Ok(warp::reply::json(&json![{ "points": points}]).into_response())
         } else {
-            StatusCode::NOT_FOUND.into_response()
+            Err(warp::reject::custom(BadID))
         }
     } else {
-        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    }
+}
+
+#[derive(Debug)]
+struct BadID;
+
+impl Reject for BadID {}
+
+async fn try_convert_id_to_uuid(id: String) -> Result<Uuid, Rejection> {
+    match Uuid::from_str(&id) {
+        Ok(uuid) => Ok(uuid),
+        _ => Err(warp::reject::custom(BadID)),
+    }
+}
+
+async fn handle_bad_id(err: Rejection) -> Result<impl Reply, Rejection> {
+    if let Some(_) = err.find::<BadID>() {
+        Ok(warp::reply::with_status(
+            "No receipt found for that ID.",
+            StatusCode::NOT_FOUND,
+        ))
+    } else {
+        Err(err)
     }
 }
 
