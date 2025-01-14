@@ -103,6 +103,7 @@ async fn main() {
     let process = warp::path!("process")
         .and(warp::post())
         .and(warp::body::json())
+        .and_then(check_for_items)
         .and(with_receipts(receipts.clone()))
         .map(add_receipt)
         .recover(handle_bad_receipt);
@@ -136,12 +137,28 @@ fn add_receipt(receipt: Receipt, receipts: Arc<Mutex<Receipts>>) -> Response {
     }
 }
 
+#[derive(Debug)]
+struct BadItems;
+impl Reject for BadItems {}
+
+async fn check_for_items(receipt: Receipt) -> Result<Receipt, Rejection> {
+    if receipt.items.len() == 0 {
+        Err(warp::reject::custom(BadItems))
+    } else {
+        Ok(receipt)
+    }
+}
+
 async fn handle_bad_receipt(err: Rejection) -> Result<impl Reply, Rejection> {
+    let invalid_receipt = Ok(warp::reply::with_status(
+        "The reciept is invalid.",
+        StatusCode::BAD_REQUEST,
+    ));
+
     if let Some(_) = err.find::<BodyDeserializeError>() {
-        Ok(warp::reply::with_status(
-            "The reciept is invalid.",
-            StatusCode::BAD_REQUEST,
-        ))
+        invalid_receipt
+    } else if let Some(_) = err.find::<BadItems>() {
+        invalid_receipt
     } else {
         Err(err)
     }
@@ -162,7 +179,6 @@ async fn get_points(id: Uuid, receipts: Arc<Mutex<Receipts>>) -> Result<Response
 
 #[derive(Debug)]
 struct BadID;
-
 impl Reject for BadID {}
 
 async fn try_convert_id_to_uuid(id: String) -> Result<Uuid, Rejection> {
