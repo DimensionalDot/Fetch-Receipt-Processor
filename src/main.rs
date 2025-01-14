@@ -1,4 +1,5 @@
 use chrono::{Datelike, NaiveDate, NaiveTime};
+use clap::Parser;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use std::{
@@ -83,8 +84,18 @@ impl Item {
     }
 }
 
+/// A simple receipt processor
+#[derive(Parser)]
+struct Args {
+    /// Port to expose the local server on
+    #[arg(short, long, default_value_t = 3030)]
+    port: u16,
+}
+
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+
     let receipts = Arc::new(Mutex::new(HashMap::new()));
     
     let process = warp::path!("process")
@@ -100,7 +111,7 @@ async fn main() {
 
     let routes = warp::path("receipts").and(process.or(points));
 
-    warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], args.port)).await;
 }
 
 fn with_receipts(
